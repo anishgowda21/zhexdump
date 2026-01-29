@@ -1,0 +1,7 @@
+.{
+    .name = .zhexdump,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.15.1",
+    .paths = .{""},
+    .fingerprint = 0x1758cb6df387ab4f,
+}
