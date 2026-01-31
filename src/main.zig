@@ -45,13 +45,13 @@ const HexDump = struct {
     allocator: std.mem.Allocator,
 
     fn init(file_name: []const u8, opts: Options, allocator: std.mem.Allocator) !HexDump {
-        const buffer = try allocator.alloc(u8, 65536);
-        errdefer allocator.free(buffer);
-
         var file = try std.fs.cwd().openFile(file_name, .{ .mode = .read_only });
         errdefer file.close();
 
         const file_size = try file.getEndPos();
+
+        const buffer = try allocator.alloc(u8, 1024 * 1024);
+        errdefer allocator.free(buffer);
 
         return HexDump{
             .file = file,
@@ -75,13 +75,83 @@ const HexDump = struct {
         }
         const reader = &file_reader.interface;
         var buffer: [16]u8 = undefined;
-        std.debug.print("Seek pos: {d}\n", .{file_reader.pos});
+        var last_read_buffer: [16]u8 = undefined;
+        var total_bytes_read: usize = 0;
+
+        var stdout_buffer: [1024]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
 
         while (true) {
             const bytes_read = try reader.readSliceShort(&buffer);
             if (bytes_read == 0) break;
-            std.debug.print("{s}", .{buffer[0..bytes_read]});
+
+            if (std.mem.eql(u8, buffer[0..], last_read_buffer[0..]) and !self.options.no_squeezing) {
+                total_bytes_read += bytes_read;
+                try stdout.print("*\n", .{});
+                continue;
+            }
+
+            if (self.options.formats.items.len == 0) {
+                try defaultDump(buffer, bytes_read, total_bytes_read, stdout);
+            }
+
+            for (self.options.formats.items) |f| {
+                switch (f) {
+                    FormatType.canonical => try canonicalDump(buffer, bytes_read, total_bytes_read, stdout),
+                    else => {},
+                }
+            }
+
+            total_bytes_read += bytes_read;
+            std.mem.copyForwards(u8, last_read_buffer[0..], buffer[0..]);
         }
+        if (self.options.formats.items.len > 0 and self.options.formats.items[self.options.formats.items.len - 1] == FormatType.canonical) {
+            try stdout.print("{x:0>8}\n", .{total_bytes_read});
+        } else {
+            try stdout.print("{x:0>7}\n", .{total_bytes_read});
+        }
+        try stdout.flush();
+    }
+
+    fn defaultDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        var i: usize = 0;
+
+        try writer.print("{x:0>7} ", .{total_bytes_read});
+        while (i < bytes_read) : (i += 2) {
+            if (i + 1 < bytes_read) {
+                try writer.print("{x:0>2}{x:0>2} ", .{ line[i + 1], line[i] });
+            } else {
+                try writer.print("{x:0>4} ", .{line[i]});
+            }
+        }
+        try writer.print("\n", .{});
+    }
+
+    fn canonicalDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        try writer.print("{x:0>8} ", .{total_bytes_read});
+
+        for (0..bytes_read) |i| {
+            if (i == 8) try writer.print(" ", .{});
+            try writer.print(" {x:0>2}", .{line[i]});
+        }
+
+        var rem = 16 - @as(u8, @intCast(bytes_read));
+
+        // if (rem <= 8) std.debug.print(" ", .{});
+
+        while (rem > 0) {
+            try writer.print("   ", .{});
+            if (rem == 8) try writer.print(" ", .{});
+            rem -= 1;
+        }
+
+        try writer.print("  |", .{});
+        for (0..bytes_read) |i| {
+            const char = if (std.ascii.isPrint(line[i])) line[i] else '.';
+            try writer.print("{c}", .{char});
+        }
+        try writer.print("|\n", .{});
     }
 };
 
@@ -207,75 +277,19 @@ pub fn main() !u8 {
     var hexDump = try HexDump.init(filename, opts, allocator);
     defer hexDump.deinit();
 
-    std.debug.print("File: {s}\n", .{filename});
+    // std.debug.print("File: {s}\n", .{filename});
 
-    std.debug.print("File len: {d}\n", .{hexDump.file_size});
+    // std.debug.print("File len: {d}\n", .{hexDump.file_size});
 
-    std.debug.print("args len {d}\n", .{opts.formats.items.len});
+    // std.debug.print("args len {d}\n", .{opts.formats.items.len});
 
-    std.debug.print("Offset: {d}\n", .{opts.offset});
+    // std.debug.print("Offset: {d}\n", .{opts.offset});
 
-    for (opts.formats.items) |f| {
-        std.debug.print("{}\n", .{f});
-    }
+    // for (opts.formats.items) |f| {
+    //     std.debug.print("{}\n", .{f});
+    // }
 
     try hexDump.process();
 
-    // var filename: [:0]const u8 = undefined;
-    //
-    // if (args.next()) |name| {
-    //     filename = name;
-    // } else {
-    //     std.log.err("File name needed", .{});
-    //     return 1;
-    // }
-    //
-    // //const filename = args.next().?;
-    // const file = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
-    // defer file.close();
-    //
-    // const file_size = try file.getEndPos();
-    //
-    // var buffer = try allocator.alloc(u8, file_size);
-    // defer allocator.free(buffer);
-    // _ = try file.readAll(buffer);
-    //
-    // var stdout_buffer: [4096]u8 = undefined;
-    // var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    // const stdout = &stdout_writer.interface;
-    //
-    // var offset: usize = 0;
-    // while (offset < buffer.len) {
-    //     const bytes_read = @min(16, buffer.len - offset);
-    //     const chunk = buffer[offset .. offset + bytes_read];
-    //
-    //     try stdout.print("{x:0>8} ", .{offset});
-    //     if (bytes_read == 0) break;
-    //
-    //     for (0..bytes_read) |i| {
-    //         if (i == 8) try stdout.print(" ", .{});
-    //         try stdout.print(" {x:0>2}", .{chunk[i]});
-    //     }
-    //
-    //     var rem = 16 - @as(u8, @intCast(bytes_read));
-    //
-    //     while (rem > 0) {
-    //         try stdout.print("   ", .{});
-    //         if (rem == 8) try stdout.print(" ", .{});
-    //         rem -= 1;
-    //     }
-    //
-    //     try stdout.print("  |", .{});
-    //     for (0..bytes_read) |i| {
-    //         const char = if (std.ascii.isPrint(chunk[i])) chunk[i] else '.';
-    //         try stdout.print("{c}", .{char});
-    //     }
-    //     try stdout.print("|\n", .{});
-    //
-    //     offset += @intCast(bytes_read);
-    // }
-    // try stdout.print("\n", .{});
-    // try stdout.flush();
-    //
     return 0;
 }
