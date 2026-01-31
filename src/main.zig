@@ -1,12 +1,18 @@
 const std = @import("std");
 
+const ParseError = error{
+    MissingLengthArgument,
+    MissingOffsetArgument,
+    InvalidNumber,
+    InvalidOffset,
+};
+
 const FormatType = enum {
     octal_byte, // -b
     char, // -c
     canonical, // -C
     decimal_unsigned, // -d
     octal_short, // -o
-    decimal_signed, // -v
     hex, // -x
     custom, // -e
 };
@@ -31,13 +37,24 @@ const Options = struct {
 };
 
 const HexDump = struct {
+    file_name: []u8,
     file_contents: []u8,
     file_size: u64,
     options: Options,
     allocator: std.mem.Allocator,
 };
 
-fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) !Options {
+fn getSuffixMult(suffix: u8) usize {
+    switch (suffix) {
+        'b' => return 512,
+        'k' => return 1024,
+        'm' => return 1048576,
+        'g' => return 1073741824,
+        else => return 1,
+    }
+}
+
+fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.mem.Allocator.Error)!Options {
     var options = Options.init();
     errdefer options.deinit(allocator);
 
@@ -58,15 +75,58 @@ fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) !Options {
                     'n' => {
                         i += 1;
 
-                        if (i >= args.len) return error.MissingArgument;
+                        if (i >= args.len) return ParseError.MissingLengthArgument;
 
                         const len_str = args[i];
 
                         const len = std.fmt.parseInt(usize, len_str, 10) catch {
-                            return error.InvalidNumber;
+                            return ParseError.InvalidNumber;
                         };
 
                         options.length = len;
+                    },
+                    's' => {
+                        i += 1;
+                        if (i >= args.len) return ParseError.MissingOffsetArgument;
+                        const off_set_arg = args[i];
+                        var off_set_str: []const u8 = off_set_arg;
+                        const last = off_set_str[off_set_str.len - 1];
+                        var off_set_num: usize = 0;
+                        const valid_suffix = switch (last) {
+                            'b', 'k', 'm', 'g' => true,
+                            else => false,
+                        };
+
+                        var multiplier: usize = 1;
+
+                        if (off_set_str[0] == '0' and off_set_str.len >= 2) {
+                            if (off_set_str[1] == 'x' or off_set_str[1] == 'X') {
+                                if (valid_suffix and last != 'b') {
+                                    multiplier = getSuffixMult(last);
+                                    off_set_str = off_set_str[0 .. off_set_str.len - 1];
+                                }
+                                off_set_num = std.fmt.parseInt(usize, off_set_str[2..], 16) catch {
+                                    return ParseError.InvalidOffset;
+                                };
+                            } else {
+                                if (valid_suffix) {
+                                    multiplier = getSuffixMult(last);
+                                    off_set_str = off_set_str[0 .. off_set_str.len - 1];
+                                }
+                                off_set_num = std.fmt.parseInt(usize, off_set_str[1..], 8) catch {
+                                    return ParseError.InvalidOffset;
+                                };
+                            }
+                        } else {
+                            if (valid_suffix) {
+                                multiplier = getSuffixMult(last);
+                                off_set_str = off_set_str[0 .. off_set_str.len - 1];
+                            }
+                            off_set_num = std.fmt.parseInt(usize, off_set_str, 10) catch {
+                                return ParseError.InvalidOffset;
+                            };
+                        }
+                        options.offset = off_set_num * multiplier;
                     },
                     else => {},
                 }
@@ -89,6 +149,8 @@ pub fn main() !u8 {
     defer opts.deinit(allocator);
 
     std.debug.print("args len {d}\n", .{opts.formats.items.len});
+
+    std.debug.print("Offset: {d}\n", .{opts.offset});
 
     for (opts.formats.items) |f| {
         std.debug.print("{}\n", .{f});
