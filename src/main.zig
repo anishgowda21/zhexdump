@@ -5,6 +5,7 @@ const ParseError = error{
     MissingOffsetArgument,
     InvalidNumber,
     InvalidOffset,
+    InputFileMissing,
 };
 
 const FormatType = enum {
@@ -37,11 +38,51 @@ const Options = struct {
 };
 
 const HexDump = struct {
-    file_name: []u8,
-    file_contents: []u8,
+    file: std.fs.File,
+    read_buffer: []u8,
     file_size: u64,
     options: Options,
     allocator: std.mem.Allocator,
+
+    fn init(file_name: []const u8, opts: Options, allocator: std.mem.Allocator) !HexDump {
+        const buffer = try allocator.alloc(u8, 65536);
+        errdefer allocator.free(buffer);
+
+        var file = try std.fs.cwd().openFile(file_name, .{ .mode = .read_only });
+        errdefer file.close();
+
+        const file_size = try file.getEndPos();
+
+        return HexDump{
+            .file = file,
+            .read_buffer = buffer,
+            .file_size = file_size,
+            .options = opts,
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: *HexDump) void {
+        self.file.close();
+        self.allocator.free(self.read_buffer);
+        self.options.deinit(self.allocator);
+    }
+
+    fn process(self: *HexDump) !void {
+        var file_reader = self.file.reader(self.read_buffer);
+        if (self.options.offset > 0) {
+            try file_reader.seekTo(self.options.offset);
+        }
+        const reader = &file_reader.interface;
+        var buffer: [16]u8 = undefined;
+        std.debug.print("Seek pos: {d}\n", .{file_reader.pos});
+
+        while (true) {
+            const bytes_read = try reader.readSliceShort(&buffer);
+            if (bytes_read == 0) break;
+            std.debug.print("{s}", .{buffer[0..bytes_read]});
+        }
+    }
 };
 
 fn getSuffixMult(suffix: u8) usize {
@@ -54,9 +95,13 @@ fn getSuffixMult(suffix: u8) usize {
     }
 }
 
-fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.mem.Allocator.Error)!Options {
+fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.mem.Allocator.Error)!struct {
+    options: Options,
+    filename: []const u8,
+} {
     var options = Options.init();
     errdefer options.deinit(allocator);
+    var filename: ?[]u8 = null;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -131,10 +176,19 @@ fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.
                     else => {},
                 }
             }
+        } else {
+            filename = arg;
         }
     }
 
-    return options;
+    if (filename == null) {
+        return ParseError.InputFileMissing;
+    }
+
+    return .{
+        .options = options,
+        .filename = filename.?,
+    };
 }
 
 pub fn main() !u8 {
@@ -145,8 +199,17 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    var opts = try processArgs(args, allocator);
-    defer opts.deinit(allocator);
+    const processedArgs = try processArgs(args, allocator);
+    const opts = processedArgs.options;
+
+    const filename = processedArgs.filename;
+
+    var hexDump = try HexDump.init(filename, opts, allocator);
+    defer hexDump.deinit();
+
+    std.debug.print("File: {s}\n", .{filename});
+
+    std.debug.print("File len: {d}\n", .{hexDump.file_size});
 
     std.debug.print("args len {d}\n", .{opts.formats.items.len});
 
@@ -155,6 +218,8 @@ pub fn main() !u8 {
     for (opts.formats.items) |f| {
         std.debug.print("{}\n", .{f});
     }
+
+    try hexDump.process();
 
     // var filename: [:0]const u8 = undefined;
     //
