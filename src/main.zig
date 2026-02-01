@@ -100,6 +100,9 @@ const HexDump = struct {
                 switch (f) {
                     FormatType.canonical => try canonicalDump(buffer, bytes_read, total_bytes_read, stdout),
                     FormatType.octal_byte => try octalByteDump(buffer, bytes_read, total_bytes_read, stdout),
+                    FormatType.char => try charByteDump(buffer, bytes_read, total_bytes_read, stdout),
+                    FormatType.decimal_unsigned => try decimalDump(buffer, bytes_read, total_bytes_read, stdout),
+
                     else => {},
                 }
             }
@@ -118,22 +121,54 @@ const HexDump = struct {
     fn defaultDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
         var i: usize = 0;
 
-        try writer.print("{x:0>7} ", .{total_bytes_read});
+        try writer.print("{x:0>7}", .{total_bytes_read});
         while (i < bytes_read) : (i += 2) {
             if (i + 1 < bytes_read) {
-                try writer.print("{x:0>2}{x:0>2} ", .{ line[i + 1], line[i] });
+                try writer.print(" {x:0>2}{x:0>2}", .{ line[i + 1], line[i] });
             } else {
-                try writer.print("{x:0>4} ", .{line[i]});
+                try writer.print(" {x:0>4}", .{line[i]});
             }
         }
         try writer.print("\n", .{});
     }
 
     fn octalByteDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
-        try writer.print("{x:0>7} ", .{total_bytes_read});
+        try writer.print("{x:0>7}", .{total_bytes_read});
 
         for (0..bytes_read) |i| {
-            try writer.print("{o:0>3} ", .{line[i]});
+            try writer.print(" {o:0>3}", .{line[i]});
+        }
+        try writer.print("\n", .{});
+    }
+
+    fn charByteDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        try writer.print("{x:0>7}", .{total_bytes_read});
+
+        for (0..bytes_read) |i| {
+            const byte = line[i];
+            if ((byte >= 0x20 and byte <= 0x7E) or (byte >= 0xA0)) {
+                try writer.print("{c:>4}", .{byte});
+            } else {
+                switch (byte) {
+                    0 => try writer.print("  \\0", .{}),
+                    9 => try writer.print("  \\t", .{}),
+                    10 => try writer.print("  \\n", .{}),
+                    13 => try writer.print("  \\r", .{}),
+                    else => try writer.print(" {o:0>3}", .{byte}),
+                }
+            }
+        }
+        try writer.print("\n", .{});
+    }
+
+    fn decimalDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        var i: usize = 0;
+
+        try writer.print("{x:0>7}", .{total_bytes_read});
+        while (i < bytes_read) : (i += 2) {
+            const first_byte = @as(u16, line[i]);
+            const sec_byte = if (i + 1 < bytes_read) @as(u16, line[i + 1]) else 0;
+            try writer.print("   {d:0>5}", .{sec_byte * 256 + first_byte});
         }
         try writer.print("\n", .{});
     }
