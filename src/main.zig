@@ -82,11 +82,18 @@ const HexDump = struct {
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        while (true) {
-            const bytes_read = try reader.readSliceShort(&buffer);
+        var read_length: usize = self.options.length orelse self.file_size;
+
+        while (read_length > 0) {
+            const to_read = @min(read_length, buffer.len);
+
+            const bytes_read = try reader.readSliceShort(buffer[0..to_read]);
             if (bytes_read == 0) break;
 
-            if (std.mem.eql(u8, buffer[0..], last_read_buffer[0..]) and !self.options.no_squeezing) {
+            if (bytes_read == 16 and
+                std.mem.eql(u8, buffer[0..16], last_read_buffer[0..16]) and
+                !self.options.no_squeezing)
+            {
                 total_bytes_read += bytes_read;
                 try stdout.print("*\n", .{});
                 continue;
@@ -110,7 +117,9 @@ const HexDump = struct {
             }
 
             total_bytes_read += bytes_read;
-            std.mem.copyForwards(u8, last_read_buffer[0..], buffer[0..]);
+            read_length -= bytes_read;
+            if (bytes_read == 16)
+                std.mem.copyForwards(u8, last_read_buffer[0..16], buffer[0..16]);
         }
         if (self.options.formats.items.len > 0 and self.options.formats.items[self.options.formats.items.len - 1] == FormatType.canonical) {
             try stdout.print("{x:0>8}\n", .{total_bytes_read});
