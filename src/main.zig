@@ -99,6 +99,7 @@ const HexDump = struct {
             for (self.options.formats.items) |f| {
                 switch (f) {
                     FormatType.canonical => try canonicalDump(buffer, bytes_read, total_bytes_read, stdout),
+                    FormatType.octal_byte => try octalByteDump(buffer, bytes_read, total_bytes_read, stdout),
                     else => {},
                 }
             }
@@ -128,6 +129,15 @@ const HexDump = struct {
         try writer.print("\n", .{});
     }
 
+    fn octalByteDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        try writer.print("{x:0>7} ", .{total_bytes_read});
+
+        for (0..bytes_read) |i| {
+            try writer.print("{o:0>3} ", .{line[i]});
+        }
+        try writer.print("\n", .{});
+    }
+
     fn canonicalDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
         try writer.print("{x:0>8} ", .{total_bytes_read});
 
@@ -137,8 +147,6 @@ const HexDump = struct {
         }
 
         var rem = 16 - @as(u8, @intCast(bytes_read));
-
-        // if (rem <= 8) std.debug.print(" ", .{});
 
         while (rem > 0) {
             try writer.print("   ", .{});
