@@ -102,6 +102,8 @@ const HexDump = struct {
                     FormatType.octal_byte => try octalByteDump(buffer, bytes_read, total_bytes_read, stdout),
                     FormatType.char => try charByteDump(buffer, bytes_read, total_bytes_read, stdout),
                     FormatType.decimal_unsigned => try decimalDump(buffer, bytes_read, total_bytes_read, stdout),
+                    FormatType.octal_short => try octalTwoByteDump(buffer, bytes_read, total_bytes_read, stdout),
+                    FormatType.hex => try hexTwoByteDump(buffer, bytes_read, total_bytes_read, stdout),
 
                     else => {},
                 }
@@ -169,6 +171,32 @@ const HexDump = struct {
             const first_byte = @as(u16, line[i]);
             const sec_byte = if (i + 1 < bytes_read) @as(u16, line[i + 1]) else 0;
             try writer.print("   {d:0>5}", .{sec_byte * 256 + first_byte});
+        }
+        try writer.print("\n", .{});
+    }
+
+    fn octalTwoByteDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        var i: usize = 0;
+
+        try writer.print("{x:0>7}", .{total_bytes_read});
+        while (i < bytes_read) : (i += 2) {
+            const first_byte = @as(u16, line[i]);
+            const sec_byte = if (i + 1 < bytes_read) @as(u16, line[i + 1]) else 0;
+            try writer.print("  {o:0>6}", .{sec_byte * 256 + first_byte});
+        }
+        try writer.print("\n", .{});
+    }
+
+    fn hexTwoByteDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
+        var i: usize = 0;
+
+        try writer.print("{x:0>7}", .{total_bytes_read});
+        while (i < bytes_read) : (i += 2) {
+            if (i + 1 < bytes_read) {
+                try writer.print("    {x:0>2}{x:0>2}", .{ line[i + 1], line[i] });
+            } else {
+                try writer.print("    {x:0>4}", .{line[i]});
+            }
         }
         try writer.print("\n", .{});
     }
