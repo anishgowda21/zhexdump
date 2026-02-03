@@ -38,38 +38,45 @@ const Options = struct {
 };
 
 const HexDump = struct {
-    file: std.fs.File,
+    file: ?std.fs.File,
     read_buffer: []u8,
-    file_size: u64,
     options: Options,
     allocator: std.mem.Allocator,
 
-    fn init(file_name: []const u8, opts: Options, allocator: std.mem.Allocator) !HexDump {
-        var file = try std.fs.cwd().openFile(file_name, .{ .mode = .read_only });
-        errdefer file.close();
+    fn init(file_name: ?[]const u8, opts: Options, allocator: std.mem.Allocator) !HexDump {
+        var file: ?std.fs.File = null;
+        if (file_name) |f_name| {
+            file = try std.fs.cwd().openFile(f_name, .{ .mode = .read_only });
+            errdefer file.close();
+        }
 
-        const file_size = try file.getEndPos();
-
-        const buffer = try allocator.alloc(u8, 1024 * 1024);
+        const buffer = try allocator.alloc(u8, 1024 * 1024 * 10);
         errdefer allocator.free(buffer);
 
         return HexDump{
             .file = file,
             .read_buffer = buffer,
-            .file_size = file_size,
             .options = opts,
             .allocator = allocator,
         };
     }
 
     fn deinit(self: *HexDump) void {
-        self.file.close();
+        if (self.file) |f| {
+            f.close();
+        }
         self.allocator.free(self.read_buffer);
         self.options.deinit(self.allocator);
     }
 
     fn process(self: *HexDump) !void {
-        var file_reader = self.file.reader(self.read_buffer);
+        var file_reader: std.fs.File.Reader = undefined;
+
+        if (self.file) |f| {
+            file_reader = f.reader(self.read_buffer);
+        } else {
+            file_reader = std.fs.File.stdin().reader(self.read_buffer);
+        }
         if (self.options.offset > 0) {
             try file_reader.seekTo(self.options.offset);
         }
@@ -82,10 +89,15 @@ const HexDump = struct {
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        var read_length: usize = self.options.length orelse self.file_size;
+        var read_length = self.options.length;
 
-        while (read_length > 0) {
-            const to_read = @min(read_length, buffer.len);
+        while (true) {
+            var to_read = buffer.len;
+
+            if (read_length) |l| {
+                if (l < 0) break;
+                to_read = @min(l, buffer.len);
+            }
 
             const bytes_read = try reader.readSliceShort(buffer[0..to_read]);
             if (bytes_read == 0) break;
@@ -117,7 +129,11 @@ const HexDump = struct {
             }
 
             total_bytes_read += bytes_read;
-            read_length -= bytes_read;
+
+            if (read_length) |l| {
+                read_length = l - bytes_read;
+            }
+
             if (bytes_read == 16)
                 std.mem.copyForwards(u8, last_read_buffer[0..16], buffer[0..16]);
         }
@@ -247,7 +263,7 @@ fn getSuffixMult(suffix: u8) usize {
 
 fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.mem.Allocator.Error)!struct {
     options: Options,
-    filename: []const u8,
+    filename: ?[]const u8,
 } {
     var options = Options.init();
     errdefer options.deinit(allocator);
@@ -327,13 +343,9 @@ fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.
         }
     }
 
-    if (filename == null) {
-        return ParseError.InputFileMissing;
-    }
-
     return .{
         .options = options,
-        .filename = filename.?,
+        .filename = filename,
     };
 }
 
