@@ -95,7 +95,7 @@ const HexDump = struct {
             var to_read = buffer.len;
 
             if (read_length) |l| {
-                if (l < 0) break;
+                if (l <= 0) break;
                 to_read = @min(l, buffer.len);
             }
 
