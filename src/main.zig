@@ -76,7 +76,7 @@ const HexDump = struct {
         const reader = &file_reader.interface;
         var buffer: [16]u8 = undefined;
         var last_read_buffer: [16]u8 = undefined;
-        var total_bytes_read: usize = 0;
+        var total_bytes_read: usize = self.options.offset;
 
         var stdout_buffer: [1024]u8 = undefined;
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
