@@ -284,39 +284,35 @@ fn processArgs(args: [][:0]u8, allocator: std.mem.Allocator) (ParseError || std.
                         i += 1;
                         if (i >= args.len) return ParseError.MissingOffsetArgument;
                         const off_set_arg = args[i];
-                        var off_set_str: []const u8 = off_set_arg;
+
+                        var off_set_str: []u8 = off_set_arg;
                         const last = off_set_str[off_set_str.len - 1];
                         var off_set_num: usize = 0;
-                        const valid_suffix = switch (last) {
-                            'b', 'k', 'm', 'g' => true,
-                            else => false,
-                        };
-
                         var multiplier: usize = 1;
+
+                        switch (last) {
+                            'b', 'k', 'm', 'g' => {
+                                multiplier = getSuffixMult(last);
+                                off_set_str = off_set_str[0 .. off_set_str.len - 1];
+                            },
+                            else => {},
+                        }
 
                         if (off_set_str[0] == '0' and off_set_str.len >= 2) {
                             if (off_set_str[1] == 'x' or off_set_str[1] == 'X') {
-                                if (valid_suffix and last != 'b') {
-                                    multiplier = getSuffixMult(last);
-                                    off_set_str = off_set_str[0 .. off_set_str.len - 1];
-                                }
                                 off_set_num = std.fmt.parseInt(usize, off_set_str[2..], 16) catch {
                                     return ParseError.InvalidOffset;
                                 };
-                            } else {
-                                if (valid_suffix) {
-                                    multiplier = getSuffixMult(last);
-                                    off_set_str = off_set_str[0 .. off_set_str.len - 1];
+                                if (last == 'b') {
+                                    off_set_num = off_set_num * 16 + 11;
+                                    multiplier = 1;
                                 }
+                            } else {
                                 off_set_num = std.fmt.parseInt(usize, off_set_str[1..], 8) catch {
                                     return ParseError.InvalidOffset;
                                 };
                             }
                         } else {
-                            if (valid_suffix) {
-                                multiplier = getSuffixMult(last);
-                                off_set_str = off_set_str[0 .. off_set_str.len - 1];
-                            }
                             off_set_num = std.fmt.parseInt(usize, off_set_str, 10) catch {
                                 return ParseError.InvalidOffset;
                             };
