@@ -215,6 +215,7 @@ const HexDump = struct {
     ) !void {
         while (true) {
             var space_available = buffer.len - last_bytes_read.*;
+            var finished_request = false;
 
             if (read_length.*) |l| {
                 if (l <= 0) break;
@@ -230,7 +231,11 @@ const HexDump = struct {
             const total_in_buffer = last_bytes_read.* + bytes_read;
             // std.debug.print("In buffer: {d}\n", .{total_in_buffer});
 
-            if (total_in_buffer < 16 and !is_last_file) {
+            if (read_length.*) |l| {
+                if (total_in_buffer >= l) finished_request = true;
+            }
+
+            if (total_in_buffer < 16 and !is_last_file and !finished_request) {
                 last_bytes_read.* = total_in_buffer;
                 return;
             }
