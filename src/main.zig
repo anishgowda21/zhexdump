@@ -39,14 +39,14 @@ const Options = struct {
 
 const HexDump = struct {
     files: std.ArrayList(std.fs.File),
-    read_buffer: []u8,
+    // read_buffer: []u8,
     options: Options,
     allocator: std.mem.Allocator,
 
     fn init(file_names: std.ArrayList([]const u8), opts: Options, allocator: std.mem.Allocator) !HexDump {
         var hexDump = HexDump{
             .files = .empty,
-            .read_buffer = undefined,
+            // .read_buffer = undefined,
             .options = opts,
             .allocator = allocator,
         };
@@ -61,10 +61,10 @@ const HexDump = struct {
             errdefer file.close();
         }
 
-        const buffer = try allocator.alloc(u8, 1024 * 1024 * 10);
-        errdefer allocator.free(buffer);
+        // const buffer = try allocator.alloc(u8, 4096);
+        // errdefer allocator.free(buffer);
 
-        hexDump.read_buffer = buffer;
+        // hexDump.read_buffer = buffer;
         return hexDump;
     }
 
@@ -73,7 +73,7 @@ const HexDump = struct {
             f.close();
         }
         self.files.deinit(self.allocator);
-        self.allocator.free(self.read_buffer);
+        // self.allocator.free(self.read_buffer);
         self.options.deinit(self.allocator);
     }
 
@@ -83,11 +83,14 @@ const HexDump = struct {
         var start_offset = self.options.offset;
         var last_read_buffer: [16]u8 = undefined;
 
-        const stdout_buffer = try self.allocator.alloc(u8, 1024 * 1024 * 10);
-        errdefer self.allocator.free(stdout_buffer);
-        var stdout_writer = std.fs.File.stdout().writer(stdout_buffer);
+        // const stdout_buffer = try self.allocator.alloc(u8, 1024 * 1024 * 10);
+        // errdefer self.allocator.free(stdout_buffer);
+        var stdout_buffer: [4096]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
-        
+
+        var read_buffer: [4096]u8 = undefined;
+
         var is_last_file = false;
         var last_bytes_read: usize = 0;
         var curr_buffer: [16]u8 = undefined;
@@ -97,7 +100,8 @@ const HexDump = struct {
             for (0..self.files.items.len) |i| {
                 const file = self.files.items[i];
                 if (i == self.files.items.len - 1) is_last_file = true;
-                file_reader = file.reader(self.read_buffer);
+
+                file_reader = file.reader(&read_buffer);
                 const curr_length = try file_reader.getSize();
 
                 if (start_offset > 0) {
@@ -128,7 +132,7 @@ const HexDump = struct {
                 }
             }
         } else {
-            file_reader = std.fs.File.stdin().reader(self.read_buffer);
+            file_reader = std.fs.File.stdin().reader(&read_buffer);
 
             if (start_offset > 0) {
                 try file_reader.seekTo(start_offset);
@@ -244,7 +248,6 @@ const HexDump = struct {
 
     fn defaultDump(line: [16]u8, bytes_read: usize, total_bytes_read: usize, writer: *std.io.Writer) !void {
         var i: usize = 0;
-
         try writer.print("{x:0>7}", .{total_bytes_read});
         while (i < bytes_read) : (i += 2) {
             if (i + 1 < bytes_read) {
