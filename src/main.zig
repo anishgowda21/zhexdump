@@ -89,6 +89,7 @@ const HexDump = struct {
         var is_last_file = false;
         var last_bytes_read: usize = 0;
         var curr_buffer: [16]u8 = undefined;
+        var read_length = self.options.length;
 
         if (self.files.items.len > 0) {
             for (0..self.files.items.len) |i| {
@@ -109,7 +110,6 @@ const HexDump = struct {
                     }
                 }
 
-                var read_length = self.options.length;
                 try self.process_reader(
                     &file_reader.interface,
                     &total_bytes_read,
@@ -125,6 +125,23 @@ const HexDump = struct {
                     if (rl <= 0) break;
                 }
             }
+        } else {
+            file_reader = std.fs.File.stdin().reader(self.read_buffer);
+
+            if (start_offset > 0) {
+                try file_reader.seekTo(start_offset);
+            }
+
+            try self.process_reader(
+                &file_reader.interface,
+                &total_bytes_read,
+                &last_bytes_read,
+                &curr_buffer,
+                &last_read_buffer,
+                &read_length,
+                true,
+                stdout,
+            );
         }
         if (self.options.formats.items.len > 0 and self.options.formats.items[self.options.formats.items.len - 1] == FormatType.canonical) {
             try stdout.print("{x:0>8}\n", .{total_bytes_read});
@@ -132,74 +149,6 @@ const HexDump = struct {
             try stdout.print("{x:0>7}\n", .{total_bytes_read});
         }
         try stdout.flush();
-
-        // if (self.file) |f| {
-        //     file_reader = f.reader(self.read_buffer);
-        // } else {
-        //     file_reader = std.fs.File.stdin().reader(self.read_buffer);
-        // }
-        // if (self.options.offset > 0) {
-        //     try file_reader.seekTo(self.options.offset);
-        // }
-        // const reader = &file_reader.interface;
-        // var buffer: [16]u8 = undefined;
-        // var last_read_buffer: [16]u8 = undefined;
-        // var total_bytes_read: usize = self.options.offset;
-
-        // var read_length = self.options.length;
-
-        // while (true) {
-        //     var to_read = buffer.len;
-
-        //     if (read_length) |l| {
-        //         if (l <= 0) break;
-        //         to_read = @min(l, buffer.len);
-        //     }
-
-        //     const bytes_read = try reader.readSliceShort(buffer[0..to_read]);
-        //     if (bytes_read == 0) break;
-
-        //     if (bytes_read == 16 and
-        //         std.mem.eql(u8, buffer[0..16], last_read_buffer[0..16]) and
-        //         !self.options.no_squeezing)
-        //     {
-        //         total_bytes_read += bytes_read;
-        //         try stdout.print("*\n", .{});
-        //         continue;
-        //     }
-
-        //     if (self.options.formats.items.len == 0) {
-        //         try defaultDump(buffer, bytes_read, total_bytes_read, stdout);
-        //     }
-
-        //     for (self.options.formats.items) |f| {
-        //         switch (f) {
-        //             FormatType.canonical => try canonicalDump(buffer, bytes_read, total_bytes_read, stdout),
-        //             FormatType.octal_byte => try octalByteDump(buffer, bytes_read, total_bytes_read, stdout),
-        //             FormatType.char => try charByteDump(buffer, bytes_read, total_bytes_read, stdout),
-        //             FormatType.decimal_unsigned => try decimalDump(buffer, bytes_read, total_bytes_read, stdout),
-        //             FormatType.octal_short => try octalTwoByteDump(buffer, bytes_read, total_bytes_read, stdout),
-        //             FormatType.hex => try hexTwoByteDump(buffer, bytes_read, total_bytes_read, stdout),
-
-        //             else => {},
-        //         }
-        //     }
-
-        //     total_bytes_read += bytes_read;
-
-        //     if (read_length) |l| {
-        //         read_length = l - bytes_read;
-        //     }
-
-        //     if (bytes_read == 16)
-        //         std.mem.copyForwards(u8, last_read_buffer[0..16], buffer[0..16]);
-        // }
-        // if (self.options.formats.items.len > 0 and self.options.formats.items[self.options.formats.items.len - 1] == FormatType.canonical) {
-        //     try stdout.print("{x:0>8}\n", .{total_bytes_read});
-        // } else {
-        //     try stdout.print("{x:0>7}\n", .{total_bytes_read});
-        // }
-        // try stdout.flush();
     }
 
     fn process_reader(
@@ -229,7 +178,7 @@ const HexDump = struct {
             if (bytes_read == 0) break;
 
             const total_in_buffer = last_bytes_read.* + bytes_read;
-            // std.debug.print("In buffer: {d}\n", .{total_in_buffer});
+            std.debug.print("In buffer: {d}\n", .{total_in_buffer});
 
             if (read_length.*) |l| {
                 if (total_in_buffer >= l) finished_request = true;
