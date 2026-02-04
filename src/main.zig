@@ -240,7 +240,13 @@ const HexDump = struct {
                 return;
             }
 
-            const to_write = total_in_buffer;
+            var to_write = total_in_buffer;
+
+            if (read_length.*) |l| {
+                if (to_write > l) {
+                    to_write = l;
+                }
+            }
 
             if (to_write == 16 and
                 std.mem.eql(u8, buffer[0..16], last_read_buffer[0..16]) and
