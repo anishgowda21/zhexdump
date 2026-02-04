@@ -83,9 +83,11 @@ const HexDump = struct {
         var start_offset = self.options.offset;
         var last_read_buffer: [16]u8 = undefined;
 
-        var stdout_buffer: [1024]u8 = undefined;
-        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout_buffer = try self.allocator.alloc(u8, 1024 * 1024 * 10);
+        errdefer self.allocator.free(stdout_buffer);
+        var stdout_writer = std.fs.File.stdout().writer(stdout_buffer);
         const stdout = &stdout_writer.interface;
+        
         var is_last_file = false;
         var last_bytes_read: usize = 0;
         var curr_buffer: [16]u8 = undefined;
@@ -178,7 +180,7 @@ const HexDump = struct {
             if (bytes_read == 0) break;
 
             const total_in_buffer = last_bytes_read.* + bytes_read;
-            std.debug.print("In buffer: {d}\n", .{total_in_buffer});
+            // std.debug.print("In buffer: {d}\n", .{total_in_buffer});
 
             if (read_length.*) |l| {
                 if (total_in_buffer >= l) finished_request = true;
