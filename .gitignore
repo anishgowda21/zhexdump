@@ -3,3 +3,4 @@ zig-out
 main
 pg100.txt
 huge_random.bin
+test
